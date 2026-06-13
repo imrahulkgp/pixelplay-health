@@ -1,0 +1,72 @@
+name: probe
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: "PROBE_CONCURRENCY override (blank = default 40)"
+        required: false
+        default: ""
+      timeout:
+        description: "PROBE_TIMEOUT_MS per-request timeout (blank = default 10000)"
+        required: false
+        default: ""
+concurrency:
+  group: probe
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: data        # the orphan data/Pages branch holding state + artifacts
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Restore source onto the data branch checkout
+        run: |
+          git fetch origin main --depth=1
+          # tsx runs src/main.ts directly (no type-check), so test/ + vitest.config.ts aren't needed at runtime.
+          # .gitignore IS pulled so the generated artifacts stay ignored until the -f add below.
+          git checkout origin/main -- src package.json package-lock.json tsconfig.json .gitignore
+      - run: npm ci
+      - name: Run probe (clear stale status.json first so the no-op guard can detect a silent failure)
+        run: rm -f status.json && npm run probe   # writes dead.json/state.json/status.json to the repo ROOT
+        env:
+          PROBE_CONCURRENCY: ${{ inputs.concurrency }}   # blank on schedule -> Number("")||40 = 40
+          PROBE_TIMEOUT_MS: ${{ inputs.timeout }}         # blank on schedule -> Number("")||10000 = 10s
+      - name: Report metrics (reliable — short step log + job summary, never truncated)
+        if: always()
+        run: |
+          echo "----- workspace listing -----"; ls -la
+          echo "----- status.json -----"; cat status.json 2>/dev/null || echo "NO status.json in $(pwd)"
+          { echo '### probe metrics'; echo '```json'; cat status.json 2>/dev/null || echo '{"error":"no status.json"}'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload metrics artifact (always — readable even if the data-branch publish fails)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics
+          path: status.json
+          if-no-files-found: warn
+      - name: Publish artifacts to the data branch root (single rolling commit, no history bloat)
+        run: |
+          # No-op guard: status.json is cleared pre-probe and always rewritten by a completed probe.
+          # If it's missing, the probe silently did nothing — fail rather than republish stale data.
+          test -f status.json || { echo "::error::probe produced no fresh status.json (no-op run) — refusing to republish stale data"; exit 1; }
+          git config user.name "probe-bot"
+          git config user.email "probe-bot@users.noreply.github.com"
+          # Orphan a fresh branch each run so `data` stays at exactly ONE commit (no daily history/object bloat).
+          # Yesterday's state.json was already read from the `data` checkout above, so streak continuity holds.
+          git checkout -q --orphan data-fresh
+          git reset -q                       # unstage everything the orphan staged (src overlay + prior data files)
+          # Add whatever artifacts exist — a low-confidence run intentionally omits state.json/dead.json
+          # (keeps last-good); status.json is always written.
+          for f in state.json dead.json status.json; do if [ -f "$f" ]; then git add -f "$f"; fi; done
+          git commit -q -m "probe $(date -u +%FT%TZ)"
+          git push --force origin data-fresh:data
