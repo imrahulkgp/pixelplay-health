@@ -57,7 +57,8 @@ export async function segmentHop(
     try { r = await fetchFn(segUrl, { headers }); } catch { return "na"; }
     if (r.status === 403 || r.status === 451 || r.status === 429) return "na";
     if (r.status < 200 || r.status >= 300) return "dead";
-    const seg = firstURI(await r.text());
+    let seg: ReturnType<typeof firstURI>;
+    try { seg = firstURI(await r.text()); } catch { return "na"; }
     if (!seg) return "na";
     segUrl = new URL(seg.uri, r.url).href;
   }

@@ -83,4 +83,17 @@ describe("probeStream", () => {
     expect(r.verdict).toBe("ALIVE");
     expect(r.segment).toBe("ok");
   });
+
+  it("variant playlist body read aborts mid-stream -> segment 'na' (fail-safe), not a thrown rejection", async () => {
+    const fetchFn: FetchFn = async (url) => {
+      if (url === "https://h/master.m3u8") return { status: 200, url, text: async () => MASTER };
+      if (url === "https://h/media.m3u8") {
+        return { status: 200, url, text: async () => { throw new DOMException("aborted", "TimeoutError"); } };
+      }
+      throw new Error(`unexpected url: ${url}`);
+    };
+    const r = await probeStream({ channel: "x", url: "https://h/master.m3u8" }, fetchFn);
+    expect(r.verdict).toBe("ALIVE");
+    expect(r.segment).toBe("na");
+  });
 });
