@@ -25,10 +25,13 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
 }
 
 async function main(): Promise<void> {
+  console.log(`[probe] start ${new Date().toISOString()}`);
   const { streams, blocked } = await fetchCatalog(realFetch);
+  console.log(`[probe] catalog: ${streams.length} streams, ${blocked.size} blocked`);
   const prevState = await readJson<StateMap>(STATE_PATH, {});
   const now = new Date();
   const r = await runProbe(streams, blocked, prevState, realFetch, now);
+  console.log(`[probe] runProbe done ${new Date().toISOString()}`);
 
   // status.json always publishes (observability). On a low-confidence run we keep BOTH the
   // last-good dead.json AND the last-good state.json — persisting a degraded-vantage streak map

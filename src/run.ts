@@ -42,9 +42,15 @@ export async function runProbe(
   const byChannel = groupByChannel(streams, blocked);
   const ids = Object.keys(byChannel);
 
+  let done = 0;
   const probed = await pool(
     ids,
-    async (id) => ({ id, ...(await probeChannel(byChannel[id]!, fetchFn)) }),
+    async (id) => {
+      const result = { id, ...(await probeChannel(byChannel[id]!, fetchFn)) };
+      done++;
+      if (done % 200 === 0 || done === ids.length) console.log(`[probe] ${done}/${ids.length} channels checked`);
+      return result;
+    },
     CONCURRENCY,
   );
 
