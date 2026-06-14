@@ -24,6 +24,12 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
   try { return JSON.parse(await readFile(path, "utf8")) as T; } catch { return fallback; }
 }
 
+// Diagnostics for the silent exit-0/no-files failure mode (runs 27492470911 etc.): a hang or
+// crash that escapes main()'s own try/catch should still leave a trace in the step log.
+process.on("exit", (code) => console.log(`[probe] process exit code=${code} ${new Date().toISOString()}`));
+process.on("unhandledRejection", (reason) => console.error("[probe] unhandledRejection:", reason));
+process.on("uncaughtException", (err) => console.error("[probe] uncaughtException:", err));
+
 async function main(): Promise<void> {
   console.log(`[probe] start ${new Date().toISOString()}`);
   const { streams, blocked } = await fetchCatalog(realFetch);
@@ -37,6 +43,7 @@ async function main(): Promise<void> {
   // last-good dead.json AND the last-good state.json — persisting a degraded-vantage streak map
   // would let a poisoned streak list channels on the next good run, defeating the tripwire.
   await writeFile(STATUS_PATH, JSON.stringify(r.metrics, null, 2));
+  console.log(`[probe] wrote status.json ${new Date().toISOString()}`);
   if (r.publishDead) {
     await writeFile(STATE_PATH, JSON.stringify(r.state));
     await writeFile(DEAD_PATH, JSON.stringify(r.dead));

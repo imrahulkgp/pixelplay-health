@@ -48,11 +48,12 @@ export async function runProbe(
     async (id) => {
       const result = { id, ...(await probeChannel(byChannel[id]!, fetchFn)) };
       done++;
-      if (done % 200 === 0 || done === ids.length) console.log(`[probe] ${done}/${ids.length} channels checked`);
+      if (done % 50 === 0 || done === ids.length) console.log(`[probe] ${done}/${ids.length} channels checked`);
       return result;
     },
     CONCURRENCY,
   );
+  console.log(`[probe] pool done ${new Date().toISOString()}`);
 
   const nextState: StateMap = { ...prevState };
   const outcomes: Verdict[] = [];
