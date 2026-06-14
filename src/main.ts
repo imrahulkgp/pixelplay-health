@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fetchCatalog } from "./catalog";
 import { runProbe } from "./run";
+import { withTimeout } from "./timeout";
 import type { StateMap } from "./types";
 import type { FetchFn } from "./probe";
 
@@ -11,12 +12,22 @@ const DEAD_PATH = "dead.json";
 const STATUS_PATH = "status.json";
 const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS) || 10_000; // env-tunable; cloud vantage may need >10s
 
+// withTimeout (not just AbortSignal.timeout) is required: a fetch stuck on DNS
+// resolution can hang past AbortSignal.timeout's deadline without ever
+// settling, and since that timer is unref'd, the pending fetch holds no ref
+// on the event loop -- once every other channel finishes, the process exits
+// 0 with this one promise (and pool()'s Promise.all) permanently pending,
+// before status.json/dead.json are ever written (e.g. run 27504726572,
+// stuck on AlEkhbariya.sa for the entire ~21min run). withTimeout's own
+// ref'd setTimeout guarantees this function settles within TIMEOUT_MS
+// regardless of the underlying fetch's state.
 const realFetch: FetchFn = async (url, init) => {
-  const resp = await fetch(url, {
-    headers: init?.headers,
-    redirect: "follow",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  const ac = new AbortController();
+  const resp = await withTimeout(
+    () => fetch(url, { headers: init?.headers, redirect: "follow", signal: ac.signal }),
+    TIMEOUT_MS,
+    () => ac.abort(),
+  );
   return { status: resp.status, url: resp.url, text: () => resp.text() };
 };
 
@@ -24,9 +35,8 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
   try { return JSON.parse(await readFile(path, "utf8")) as T; } catch { return fallback; }
 }
 
-// Diagnostics for the silent exit-0/no-files failure mode (runs 27492470911 etc.): a hang or
-// crash that escapes main()'s own try/catch should still leave a trace in the step log.
-process.on("exit", (code) => console.log(`[probe] process exit code=${code} ${new Date().toISOString()}`));
+// Defense in depth: a rejection/exception that escapes main()'s own try/catch
+// should still leave a trace in the step log rather than exiting silently.
 process.on("unhandledRejection", (reason) => console.error("[probe] unhandledRejection:", reason));
 process.on("uncaughtException", (err) => console.error("[probe] uncaughtException:", err));
 
@@ -43,7 +53,6 @@ async function main(): Promise<void> {
   // last-good dead.json AND the last-good state.json — persisting a degraded-vantage streak map
   // would let a poisoned streak list channels on the next good run, defeating the tripwire.
   await writeFile(STATUS_PATH, JSON.stringify(r.metrics, null, 2));
-  console.log(`[probe] wrote status.json ${new Date().toISOString()}`);
   if (r.publishDead) {
     await writeFile(STATE_PATH, JSON.stringify(r.state));
     await writeFile(DEAD_PATH, JSON.stringify(r.dead));

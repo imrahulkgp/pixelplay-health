@@ -43,30 +43,16 @@ export async function runProbe(
   const ids = Object.keys(byChannel);
 
   let done = 0;
-  const inFlight = new Set<string>();
-  // Unref'd: a ticking diagnostic must never itself be the thing keeping the
-  // process alive. If the event loop drains while channels are still
-  // in-flight (the silent exit-0 failure, runs 27503460085/27504123081), the
-  // last tick before "[probe] process exit" pinpoints which channel(s) were
-  // stuck and for how long.
-  const watchdog = setInterval(() => {
-    console.log(`[probe] tick ${new Date().toISOString()} done=${done}/${ids.length} inflight=[${[...inFlight].join(",")}]`);
-  }, 2000);
-  watchdog.unref();
   const probed = await pool(
     ids,
     async (id) => {
-      inFlight.add(id);
       const result = { id, ...(await probeChannel(byChannel[id]!, fetchFn)) };
-      inFlight.delete(id);
       done++;
-      if (done % 50 === 0 || done === ids.length) console.log(`[probe] ${done}/${ids.length} channels checked`);
+      if (done % 200 === 0 || done === ids.length) console.log(`[probe] ${done}/${ids.length} channels checked`);
       return result;
     },
     CONCURRENCY,
   );
-  clearInterval(watchdog);
-  console.log(`[probe] pool done ${new Date().toISOString()}`);
 
   const nextState: StateMap = { ...prevState };
   const outcomes: Verdict[] = [];
