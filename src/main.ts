@@ -1,9 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fetchCatalog } from "./catalog";
 import { runProbe } from "./run";
-import { withTimeout } from "./timeout";
+import { createRealFetch } from "./realFetch";
 import type { StateMap } from "./types";
-import type { FetchFn } from "./probe";
 
 // Artifacts live at the ROOT of the orphan `data` branch: GitHub Pages serves a branch from
 // its root, so these resolve to https://<user>.github.io/pixelplay-health/dead.json.
@@ -12,24 +11,7 @@ const DEAD_PATH = "dead.json";
 const STATUS_PATH = "status.json";
 const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS) || 10_000; // env-tunable; cloud vantage may need >10s
 
-// withTimeout (not just AbortSignal.timeout) is required: a fetch stuck on DNS
-// resolution can hang past AbortSignal.timeout's deadline without ever
-// settling, and since that timer is unref'd, the pending fetch holds no ref
-// on the event loop -- once every other channel finishes, the process exits
-// 0 with this one promise (and pool()'s Promise.all) permanently pending,
-// before status.json/dead.json are ever written (e.g. run 27504726572,
-// stuck on AlEkhbariya.sa for the entire ~21min run). withTimeout's own
-// ref'd setTimeout guarantees this function settles within TIMEOUT_MS
-// regardless of the underlying fetch's state.
-const realFetch: FetchFn = async (url, init) => {
-  const ac = new AbortController();
-  const resp = await withTimeout(
-    () => fetch(url, { headers: init?.headers, redirect: "follow", signal: ac.signal }),
-    TIMEOUT_MS,
-    () => ac.abort(),
-  );
-  return { status: resp.status, url: resp.url, text: () => resp.text() };
-};
+const realFetch = createRealFetch(TIMEOUT_MS);
 
 async function readJson<T>(path: string, fallback: T): Promise<T> {
   try { return JSON.parse(await readFile(path, "utf8")) as T; } catch { return fallback; }
