@@ -59,4 +59,30 @@ describe("runProbe (orchestrator)", () => {
     expect(r.metrics.lowConfidence).toBe(true);
     expect(r.publishDead).toBe(false); // caller must keep last-good dead.json
   });
+
+  it("soft deadline: channels not reached this run carry forward prevState untouched and are excluded from metrics", async () => {
+    const streams: Stream[] = Array.from({ length: 5 }, (_, i) => ({ channel: `c${i}.xx`, url: `https://h/${i}.m3u8` }));
+    const table = Object.fromEntries(streams.map((s) => [s.url, { status: 200, body: MEDIA }]));
+    const prevState: StateMap = Object.fromEntries(
+      streams.map((s, i) => [s.channel as string, { failStreak: i, lastChecked: "2026-06-01T00:00:00.000Z", lastSeen: "2026-06-01T00:00:00.000Z" }]),
+    );
+
+    let t = 0;
+    const clock = () => t;
+    const fetchFn = mockFetch(table);
+    const tickingFetch: FetchFn = async (...args) => { t += 1; return fetchFn(...args); };
+
+    const now = new Date("2026-06-15T03:00:00Z");
+    const r = await runProbe(streams, new Set(), prevState, tickingFetch, now, { concurrency: 1, deadlineMs: 3, clock });
+
+    const updated = Object.values(r.state).filter((s) => s.lastChecked === now.toISOString());
+    const carried = Object.values(r.state).filter((s) => s.lastChecked !== now.toISOString());
+    // Each channel makes 2 fetches (manifest + segment hop). The deadline check runs
+    // before each channel starts: t=0 (< 3) starts channel 1 (-> t=2), t=2 (< 3) starts
+    // channel 2 (-> t=4), t=4 (>= 3) stops -- so 2 channels complete, 3 carry forward.
+    expect(updated.length).toBe(2);
+    expect(carried.length).toBe(3);
+    for (const s of carried) expect(s).toEqual({ failStreak: expect.any(Number), lastChecked: "2026-06-01T00:00:00.000Z", lastSeen: "2026-06-01T00:00:00.000Z" });
+    expect(r.metrics.sampled).toBe(2); // skipped channels don't count toward metrics
+  });
 });

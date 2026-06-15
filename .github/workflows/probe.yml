@@ -12,6 +12,10 @@ on:
         description: "PROBE_TIMEOUT_MS per-request timeout (blank = default 10000)"
         required: false
         default: ""
+      deadline:
+        description: "PROBE_DEADLINE_MS soft deadline for the probing pool (blank = default 900000 = 15min)"
+        required: false
+        default: ""
 concurrency:
   group: probe
   cancel-in-progress: true
@@ -41,6 +45,7 @@ jobs:
         env:
           PROBE_CONCURRENCY: ${{ inputs.concurrency }}   # blank on schedule -> Number("")||40 = 40
           PROBE_TIMEOUT_MS: ${{ inputs.timeout }}         # blank on schedule -> Number("")||10000 = 10s
+          PROBE_DEADLINE_MS: ${{ inputs.deadline }}       # blank on schedule -> Number("")||900000 = 15min
       - name: Report metrics (reliable — short step log + job summary, never truncated)
         if: always()
         run: |
