@@ -13,15 +13,19 @@ import { pool } from "./pool";
 // Env-tunable so ops can adjust per the runner's egress without a code change.
 const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY) || 40;
 
-// Soft deadline for the probing pool itself. Observed: at concurrency 40 the pool covers
-// ~8600 channels in ~24min, and the GH-hosted runner has twice been killed by a
-// "received a shutdown signal" cancellation at ~28-30min -- with nothing written yet.
-// 15min caps the pool well inside that budget, leaving headroom for catalog fetch,
-// writing status/dead/state.json, and the data-branch publish step. Channels not
-// reached this run keep their prevState (graceful degradation); `shuffle` below spreads
-// the carried-forward channels across runs so coverage isn't permanently stuck on a
+// Soft deadline for the probing pool itself. At concurrency 40 the pool covers the full
+// ~8600-channel catalog in ~24-30min in the common case. The historical "received a
+// shutdown signal" kills at ~28-30min were traced to this workflow's `cancel-in-progress:
+// true` concurrency group cancelling an in-flight run whenever an overlapping trigger (e.g.
+// a manual workflow_dispatch during tuning) landed -- not a real platform ceiling (the job's
+// own `timeout-minutes: 120` in probe.yml was never the actual constraint). Now that
+// overlapping triggers queue instead of cancelling, 90min gives ~3x margin over the common
+// case (covers a materially slower day) while leaving ~30min of the job's 120min budget for
+// catalog fetch, file writes, and the data-branch publish step. Channels not reached this
+// run keep their prevState (graceful degradation); `shuffle` below spreads the
+// carried-forward channels across runs so coverage isn't permanently stuck on a
 // catalog-order suffix.
-const DEADLINE_MS = Number(process.env.PROBE_DEADLINE_MS) || 15 * 60 * 1000;
+const DEADLINE_MS = Number(process.env.PROBE_DEADLINE_MS) || 90 * 60 * 1000;
 
 function shuffle<T>(items: T[]): T[] {
   const out = items.slice();
