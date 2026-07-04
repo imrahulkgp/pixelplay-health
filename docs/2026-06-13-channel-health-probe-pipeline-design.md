@@ -39,7 +39,7 @@ Continuously identify catalog channels that are **globally dead** (not merely ge
 A standalone **public** repo (public ⇒ unlimited Actions minutes + free Pages):
 
 ```
-daily cron (GitHub Action, concurrency group: cancel-in-progress)
+daily cron (GitHub Action, serialized concurrency group)
    │  fetch iptv-org streams.json + blocklist.json (429-backoff on input)
    ▼  apply blocklist → channelID → [stream URLs] map (linked channels only)
 probe each channel's URL(s): manifest GET → (if HLS-alive) first-segment hop → classify
@@ -100,7 +100,7 @@ A channel is **listed dead iff `failStreak ≥ K`** (default **K = 2**; hard-dea
 
 **Resurrection** is automatic via both paths: a same-URL revival or an iptv-org URL swap (we re-pull the catalog every run and key by stable channel id) → next run probes the current URL → ALIVE → streak 0 → dropped. The list is a **regenerated snapshot, never an append-only blacklist.**
 
-**Durable storage (no git-history bloat):** state + artifacts live on a dedicated **orphan data/Pages branch**, written by orphaning a fresh single-commit branch each run and force-pushing it (no accumulating history for a daily-rewritten ~1–2 MB file). The workflow uses a **`concurrency` group with cancel-in-progress** so two runs never write concurrently (guards against a `workflow_dispatch` re-run racing the cron).
+**Durable storage (no git-history bloat):** state + artifacts live on a dedicated **orphan data/Pages branch**, written by orphaning a fresh single-commit branch each run and force-pushing it (no accumulating history for a daily-rewritten ~1–2 MB file). The workflow uses a **`concurrency` group (`cancel-in-progress: false`)**—an overlapping trigger queues behind the running job—so two runs never write concurrently (guards against a `workflow_dispatch` re-run racing the cron).
 
 ## Artifacts
 
