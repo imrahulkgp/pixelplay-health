@@ -24,7 +24,7 @@ Then in repo Settings → Pages: **source = branch `data`, folder `/ (root)`**. 
 
 ## Tuning
 
-`workflow_dispatch` accepts two optional inputs: `concurrency` (`PROBE_CONCURRENCY`, default 40) and `timeout` (`PROBE_TIMEOUT_MS` ms, default 10000). The daily schedule runs at 03:00 UTC.
+`workflow_dispatch` accepts three optional inputs: `concurrency` (`PROBE_CONCURRENCY`, default 40), `timeout` (`PROBE_TIMEOUT_MS` ms, default 10000), and `deadline` (`PROBE_DEADLINE_MS` ms, default 5400000 = 90min — the soft deadline for the probing pool). The daily schedule runs at 03:00 UTC.
 
 ## Consumer guidance (not part of this repo)
 
