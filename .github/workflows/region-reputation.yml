@@ -24,6 +24,8 @@ jobs:
         run: |
           git fetch origin
           if ! git ls-remote --exit-code --heads origin data-region > /dev/null 2>&1; then
+            git config user.name "region-probe-bot"
+            git config user.email "region-probe-bot@users.noreply.github.com"
             git checkout --orphan data-region
             git reset --hard
             git commit --allow-empty -q -m "init data-region branch"

@@ -79,7 +79,7 @@ export interface BuildOutputResult {
   maxLastUpdatedMillis: number;
 }
 
-function splitDocId(docId: string): { id: string; region: string } | null {
+export function splitDocId(docId: string): { id: string; region: string } | null {
   const match = docId.match(/^(.+)_([A-Z]{2})$/);
   if (!match) return null;
   return { id: match[1]!, region: match[2]! };
