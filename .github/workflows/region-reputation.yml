@@ -1,0 +1,58 @@
+name: region-reputation
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+concurrency:
+  group: region-reputation
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  region-reputation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # `actions/checkout@v4` FAILS the job outright if `ref` names a branch
+      # that doesn't exist yet on the remote — there's no fallback. So the
+      # first checkout must be the default branch (which always exists),
+      # and `data-region` is created from there BEFORE checking it out.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Ensure data-region branch exists (first run only)
+        run: |
+          git fetch origin
+          if ! git ls-remote --exit-code --heads origin data-region > /dev/null 2>&1; then
+            git checkout --orphan data-region
+            git reset --hard
+            git commit --allow-empty -q -m "init data-region branch"
+            git push origin data-region
+            git checkout -q -
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: data-region
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Restore source onto the data-region branch checkout
+        run: |
+          git fetch origin main --depth=1
+          git checkout origin/main -- src package.json package-lock.json tsconfig.json .gitignore
+      - run: npm ci
+      - name: Run region aggregation
+        run: npm run region-probe
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+      - name: Publish to data-region branch (single rolling commit, no history bloat)
+        run: |
+          test -f regionReputation.json || { echo "::error::region-probe produced no output — refusing to publish"; exit 1; }
+          git config user.name "region-probe-bot"
+          git config user.email "region-probe-bot@users.noreply.github.com"
+          git checkout -q --orphan data-region-fresh
+          git reset -q
+          git add -f regionState.json regionReputation.json
+          git commit -q -m "region-reputation $(date -u +%FT%TZ)"
+          git push --force origin data-region-fresh:data-region
