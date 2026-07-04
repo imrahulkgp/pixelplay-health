@@ -3,3 +3,6 @@ node_modules/
 dead.json
 state.json
 status.json
+# generated locally by `npm run region-probe`; published only to the orphan `data-region` branch via `git add -f`
+regionReputation.json
+regionState.json
