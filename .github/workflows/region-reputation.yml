@@ -30,7 +30,9 @@ jobs:
             git reset --hard
             git commit --allow-empty -q -m "init data-region branch"
             git push origin data-region
-            git checkout -q -
+            # No need to switch back — the next step is a fresh actions/checkout
+            # of `ref: data-region`, which checks out the right ref regardless
+            # of this job's current (detached HEAD) state.
           fi
       - uses: actions/checkout@v4
         with:
