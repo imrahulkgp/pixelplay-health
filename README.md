@@ -6,6 +6,15 @@ A free, scheduled GitHub Action that probes the public [iptv-org](https://github
 - **Self-healing:** regenerated each run, keyed by iptv-org channel id, streak `K=2` with instant reset on any alive run and on catalog re-entry. The list is a regenerated snapshot, never an append-only blacklist.
 - **Observability + tripwire:** `status.json` carries the alive/dead/inconclusive rates; if `inconclusiveRate >= 0.50` the run keeps the last-good `dead.json` (the probe vantage is degraded).
 
+> [!IMPORTANT]
+> **This repo must stay public.** Not a preference: the pipeline stops if it goes private.
+>
+> GitHub gives public repositories unlimited free Actions minutes. Private repositories on the Free and Pro plans get 2,000 a month. The two schedules here spend roughly **1,720 minutes a month** between them — `probe` takes about 21 minutes daily, and `region-reputation` runs every 15 minutes, ~2,976 times a month. Private, that spends a full month's allowance in about ten days, and the probe stops until the next billing cycle.
+>
+> It would fail quietly, which is the dangerous part. `dead.json` does not vanish; it goes stale. Consumers honouring the staleness TTL then fail open and show every channel, dead ones included, which is the exact outcome this repo exists to prevent. GitHub Pages on a private repo also needs a paid plan, so the artifacts would stop being served either way.
+>
+> If it ever has to become private, move both schedules onto compute you pay for first.
+
 ## Artifacts (served by GitHub Pages)
 
 - **`dead.json`** — `{ "schemaVersion": 1, "generatedAt": "<ISO8601>", "deadProviderIDs": ["<id>", …] }`. The ids are **raw iptv-org channel ids** (e.g. `cnn.us`) — the same ids iptv-org uses in `streams.json`/`channels.json`. A consumer matches them against its own catalog.
@@ -13,7 +22,7 @@ A free, scheduled GitHub Action that probes the public [iptv-org](https://github
 
 ## Setup (one-time, manual)
 
-The repo must be **public** (free unlimited Actions minutes + Pages). Create the orphan data branch and enable Pages on it:
+The repo must be **public** (free unlimited Actions minutes + Pages) — see the note above for what breaks otherwise. Create the orphan data branch and enable Pages on it:
 
 ```bash
 git checkout --orphan data && git rm -rf . && git commit --allow-empty -m init && git push origin data
