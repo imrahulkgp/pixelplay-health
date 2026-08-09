@@ -1,5 +1,5 @@
 import type { Stream, Verdict, SegmentVerdict } from "./types";
-import { classifyStatus, classifyError, classifyBody, combine } from "./classify";
+import { classifyStatus, classifyError, classifyBody, combine, looksLikeSoftError } from "./classify";
 import { firstURI } from "./manifest";
 
 export const VLC_UA = "VLC/3.0.18 LibVLC/3.0.18";
@@ -37,7 +37,9 @@ async function classifyResponse(
   let body = "";
   try { body = await resp.text(); } catch { return { verdict: "INCONCLUSIVE" }; }
   const hasExtM3U = /#EXTM3U/.test(body);
-  if (!hasExtM3U) return { verdict: classifyBody(isM3U8Url, false, undefined) };
+  if (!hasExtM3U) {
+    return { verdict: classifyBody(isM3U8Url, false, undefined, looksLikeSoftError(body)) };
+  }
   const segment = await segmentHop(body, resp.url, fetchFn, headers);
   return { verdict: classifyBody(true, true, segment), segment };
 }
@@ -57,8 +59,12 @@ export async function segmentHop(
     try { r = await fetchFn(segUrl, { headers }); } catch { return "na"; }
     if (r.status === 403 || r.status === 451 || r.status === 429) return "na";
     if (r.status < 200 || r.status >= 300) return "dead";
-    let seg: ReturnType<typeof firstURI>;
-    try { seg = firstURI(await r.text()); } catch { return "na"; }
+    let variantBody: string;
+    try { variantBody = await r.text(); } catch { return "na"; }
+    // Same trick one level down: a 2xx carrying an error string parses to no
+    // URI, which used to read as "na" and roll up to ALIVE.
+    if (looksLikeSoftError(variantBody)) return "dead";
+    const seg = firstURI(variantBody);
     if (!seg) return "na";
     segUrl = new URL(seg.uri, r.url).href;
   }

@@ -97,3 +97,55 @@ describe("probeStream", () => {
     expect(r.segment).toBe("na");
   });
 });
+
+describe("soft 404s (2xx carrying an error string)", () => {
+  const URL_M3U8 = "https://cdn09jtedge.indihometv.com/joss/133/crimeinvestigation/index.m3u8";
+
+  it("marks the real-world case dead instead of inconclusive", async () => {
+    // Crime + Investigation Asia, verbatim: 200 OK, mpegurl content-type,
+    // body "No route". Before this it returned INCONCLUSIVE, so the channel
+    // never reached deadProviderIDs and the app kept offering it to users who
+    // then blamed geo-blocking.
+    const fetchFn = mockFetch({ [URL_M3U8]: { status: 200, body: "No route" } });
+    const r = await probeStream({ url: URL_M3U8 } as any, fetchFn);
+    expect(r.verdict).toBe("DEAD_SIGNAL");
+  });
+
+  it("closes the false-ALIVE on non-.m3u8 URLs", async () => {
+    // The worse half: any other extension reported ALIVE outright.
+    const url = "https://cdn.example/live/123.ts";
+    const fetchFn = mockFetch({ [url]: { status: 200, body: "No route" } });
+    const r = await probeStream({ url } as any, fetchFn);
+    expect(r.verdict).toBe("DEAD_SIGNAL");
+  });
+
+  it("still reports a healthy stream alive", async () => {
+    const base = "https://cdn.example/live";
+    const fetchFn = mockFetch({
+      [`${base}/index.m3u8`]: { status: 200, body: MASTER },
+      [`${base}/media.m3u8`]: { status: 200, body: MEDIA },
+      [`${base}/seg0.ts`]: { status: 200 },
+    });
+    const r = await probeStream({ url: `${base}/index.m3u8` } as any, fetchFn);
+    expect(r.verdict).toBe("ALIVE");
+  });
+
+  it("an ISP block page stays inconclusive, not dead", async () => {
+    // One hostile network must never be able to condemn the catalogue.
+    const fetchFn = mockFetch({
+      [URL_M3U8]: { status: 200, body: "<html><body>Blocked by your provider</body></html>" },
+    });
+    const r = await probeStream({ url: URL_M3U8 } as any, fetchFn);
+    expect(r.verdict).toBe("INCONCLUSIVE");
+  });
+
+  it("a soft error on the variant hop is dead too", async () => {
+    const base = "https://cdn.example/live";
+    const fetchFn = mockFetch({
+      [`${base}/index.m3u8`]: { status: 200, body: MASTER },
+      [`${base}/media.m3u8`]: { status: 200, body: "No route" },
+    });
+    const r = await probeStream({ url: `${base}/index.m3u8` } as any, fetchFn);
+    expect(r.verdict).toBe("DEAD_SIGNAL");
+  });
+});
