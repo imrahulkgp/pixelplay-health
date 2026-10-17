@@ -1,0 +1,9 @@
+{
+  "generatedAt": "2026-10-17T07:40:25.524Z",
+  "sampled": 10374,
+  "aliveRate": 0.7119722382880278,
+  "deadRate": 0.1424715635241951,
+  "inconclusiveRate": 0.14555619818777712,
+  "segmentFalseAliveRate": 0.03687374749498998,
+  "lowConfidence": false
+}
